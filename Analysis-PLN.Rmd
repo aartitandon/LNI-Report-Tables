@@ -331,6 +331,16 @@ print(dfSummary(Outputs.PICOL.DLS.2021), method = "render")
 
 ```
 
+# merged.csv dataframe 
+```{r upload-merged-monthly-csvs, warning=F, message=F, echo=F, results=F}
+temp <- list.files(path='CSV', pattern="*.csv", full.names = T)
+list2env(lapply(setNames(temp, make.names(gsub("*.csv$", "", temp))), read.csv), envir = .GlobalEnv)
+rm(CSV.qAnswers)
+merged.csv <- do.call(rbind, lapply(ls(pattern = "CSV"), get))
+ignores <- read.csv("ignores.csv")
+merged.csv <- filter(merged.csv,!(aid %in% ignores$aid))
+```
+
 #aarti's practice chunks
 ```{r}
 # (add/remove) changing variable names 
@@ -725,21 +735,66 @@ unique.aid.device.language.2 <- left_join(unique.aid.device.language, unique.aid
 ```{r}
 # Table 1. Percent of new users to access the app ¡Etiquetas de pesticidas, ahora!™/Pesticide Labels, Now!  by operating system and language and operating system (N = xx)
 
-install.packages("gmodels")
-
-unique.aid.device.language.2 <- left_join
-
-
-table(unique.aid.device.language$device_cat.x, unique.aid.device.language$device_cat.y)
-table(unique.aid.device.language$device_cat.y, unique.aid.device.language$device_cat.x)
-install.packages("dplyr")
-CrossTable(unique.aid.device.language$device_cat.x, unique.aid.device.language$device_cat.y, prop.chisq = FALSE)
-
+#merge two data frames 
+jointdataset <- merge(unique.aid.device, unique.aid.device.language, by = 'aid')
+table(jointdataset$device_cat.x, jointdataset$evDesc2.x)
 ```
 
 ```{r}
 # Table 2. Percent of ¡Etiquetas de pesticidas, ahora!™/Pesticide Labels, Now!™ sessions by operating system and languageb and operating system.
 
+# New dateframe sorting evViewPage.01's unique aid and language, but how do I do time? 
+unique.evViewPage <- unique(evViewPage.01[ , c("aid", "evDesc2", "ts")])
+
+# format 'filterevent's' date and time 
+install.packages("lubridate")
+library("lubridate")
+merged.csv$ts <- ymd_hms(merged.csv$ts)
+
+#filter merged.csv from aid's first "evStart" to the next "evStart"
+sessionid <- merged.csv %>%
+  group_by(aid) %>%
+  slice(evType == "EvStart")
+
+##
+install.packages("dplyr")
+library("dplyr")
+
+merged.csv.dedup <- unique(merged.csv)
+
+x <- merged.csv.dedup %>% 
+  group_by(sessionid = cumsum(evType == 'evStart')) %>% 
+  mutate(sessioneventno = row_number())
+
+# this list numbers the rows of data frame groups with dplyr Package
+numberedevents <- merged.csv %>%         #Create numbering variable
+  group_by(evType == "evStart") %>%
+  mutate(numbering = row_number())
+numberedevents
+
+# OR 
+#this list puts it in order by aid, date with its accompanying eventType, and Language 
+unique.merged.csv <- unique(merged.csv[ c("aid", "evType", "ts")])
+
+#this list filters eventTypes to just evStart and evViewPage 
+filterevents <- filter(unique.merged.csv, (str_detect(evType, 'evStart|evViewPage')))
+
+#
+dos <- filter(numberedevents, numbering =="2")
+dos <- left_join(dos, unique.evViewPage, by="ts")
+
+table(dos$evDesc2)
+
+# Notes: 
+# identify event of interest and label it "timepoint1"
+# event 1 is "evStart" 
+# event 2 is "evViewpage" 
+# number all the way through until the next session 
+# count the number of events sequentially (counter?)
+# filter when counter = 2 
+# to determine how long their session is: the countup would reach up till the next session? 
+# order data consequentially, everytime u see evStart give it a new number 
+# 
 
 ```
 
@@ -799,6 +854,15 @@ final.table6.viewed <- table6.viewed %>% group_by(prodName) %>% tally(sort=T)
 # Count of all toggles 
 alltoggles <- filter(merged.csv, (str_detect(evDesc2, 'es=>en|en=>es')))
 alltoggles.1 <- alltoggles %>% group_by(evDesc2) %>% tally(sort=T)
+
+# "at least one toggle from start session"
+aid.languagetoggle <- alltoggles %>% 
+  distinct_at(vars(aid), .keep_all = TRUE) 
+
+table7 <- aid.languagetoggle %>%
+  group_by(evDesc2) %>%
+  tally(sort=T)
+
 ```
 
 ```{r}
@@ -817,5 +881,33 @@ evViewPage.01_language <- evViewPage.01 %>%
 unique.aid.device.language <- unique.aid.device.language %>% 
   select(aid, device_cat)
 
+```
+
+```{r}
+# Table 4 Bar Graph 
+data <- data.frame(label = factor(c("Product Information", "PPE", "Pesticide Labels", "Health and Safety", "First Aid", "Producer Information", "Physical or Chemical Hazards", "Storage and Disposal", "Engineering Controls", "Environmental Protection", "Spray Drift Prevention" )),
+                   count = c(1760, 1180, 914, 472, 464, 436, 356, 286, 278, 274, 262))
+
+install.packages("tidyverse")
+install.packages("ggplot2")
+library(ggplot2)
+library(tidyverse)
+
+g <- (ggplot2::ggplot(data, ggplot2::aes(x=label, y=count))
+        + ggplot2::geom_bar(stat="identity")
+        + ggplot2::scale_x_discrete(limits=rev(data$label))
+        + ggplot2::coord_flip()) 
+
+g
+
+ggplot(data, aes(x = reorder(label, -count),y=count)) +
+    geom_bar(stat="identity") + 
+    scale_x_discrete(limits=(data$label)) + 
+    geom_text(aes(label=count), hjust=-0.3) +
+    coord_flip() + 
+    xlab("Label Section") + 
+    ylab("Count (n) ") + 
+    ggtitle("¡Etiquetas de pesticidas, ahora!™/Pesticide Labels, Now!™ Views by Label Sections") 
+  
 ```
 
